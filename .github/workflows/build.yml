@@ -17,13 +17,16 @@ jobs:
       - name: Setup Theos
         uses: Randomblock1/theos-action@v1
 
-      - name: Build package
-        run: make package FINALPACKAGE=1
+      - name: Build dylib
+        run: make FINALPACKAGE=1
 
-      - name: Upload build
+      - name: Find dylib
+        run: |
+          find .theos -type f -name "*.dylib"
+
+      - name: Upload dylib
         uses: actions/upload-artifact@v4
         with:
-          name: GyroInspector-build
-          path: |
-            packages/*.deb
-            .theos/obj/**/*.dylib
+          name: GyroInspector-dylib
+          path: .theos/obj/**/*.dylib
+          if-no-files-found: error
