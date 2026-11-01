@@ -1,0 +1,8 @@
+Package: com.gyroinspector.diagnostic
+Name: GyroInspector
+Version: 0.1.0
+Architecture: iphoneos-arm
+Description: CoreMotion and Unity diagnostics overlay
+Maintainer: Local
+Author: Local
+Section: Tweaks
