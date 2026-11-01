@@ -5,12 +5,14 @@
 #import <string.h>
 
 static UIWindow *win;
+static UIView *panel;
 static UILabel *statusLabel;
 static UITextView *logView;
 static CMMotionManager *motion;
 static NSMutableArray *lines;
 static BOOL sampling = YES;
-static float sensitivity = 1.0f;
+static float sensitivity = 1.0;
+static BOOL gestureInstalled = NO;
 
 static void LogLine(NSString *s) {
     if (!lines) lines = [NSMutableArray new];
@@ -36,22 +38,25 @@ static BOOL ImageLoaded(const char *prefix) {
     return NO;
 }
 
+@interface GIController : UIViewController
+@end
+
 @interface GIWindow : UIWindow
 @end
 
 @implementation GIWindow
 
-- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
-    return [self.rootViewController.view pointInside:
-        [self.rootViewController.view convertPoint:point fromView:self]
-        withEvent:event];
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if (!panel || panel.hidden) return nil;
+
+    CGPoint p = [self.rootViewController.view
+        convertPoint:point fromView:self];
+
+    if (!CGRectContainsPoint(panel.frame, p)) return nil;
+
+    return [super hitTest:point withEvent:event];
 }
 
-@end
-
-@interface GIController : UIViewController
-@property(nonatomic,strong) UIView *panel;
-@property(nonatomic,strong) UIButton *miniButton;
 @end
 
 @implementation GIController
@@ -61,86 +66,93 @@ static BOOL ImageLoaded(const char *prefix) {
 
     self.view.backgroundColor = UIColor.clearColor;
 
-    UIView *p = [[UIView alloc] initWithFrame:CGRectMake(12, 60, 340, 390)];
-    p.backgroundColor = [UIColor colorWithWhite:0.05 alpha:0.94];
-    p.layer.cornerRadius = 13;
-    p.layer.borderWidth = 1;
-    p.layer.borderColor = UIColor.grayColor.CGColor;
-    [self.view addSubview:p];
-    self.panel = p;
+    panel = [[UIView alloc] initWithFrame:
+        CGRectMake(12, 60, 340, 390)];
 
-    UILabel *t = [[UILabel alloc] initWithFrame:CGRectMake(12, 8, 270, 28)];
-    t.text = @"GyroInspector 0.1";
-    t.textColor = UIColor.whiteColor;
-    t.font = [UIFont boldSystemFontOfSize:18];
-    [p addSubview:t];
+    panel.backgroundColor =
+        [UIColor colorWithWhite:0.05 alpha:0.95];
+    panel.layer.cornerRadius = 13;
+    panel.layer.borderWidth = 1;
+    panel.layer.borderColor = UIColor.grayColor.CGColor;
+
+    [self.view addSubview:panel];
+
+    UILabel *title = [[UILabel alloc]
+        initWithFrame:CGRectMake(12, 8, 270, 28)];
+
+    title.text = @"GyroInspector 0.1";
+    title.textColor = UIColor.whiteColor;
+    title.font = [UIFont boldSystemFontOfSize:18];
+    [panel addSubview:title];
 
     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
     close.frame = CGRectMake(300, 5, 30, 30);
     [close setTitle:@"×" forState:UIControlStateNormal];
     close.titleLabel.font = [UIFont boldSystemFontOfSize:24];
-    [close setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    [close setTitleColor:UIColor.whiteColor
+        forState:UIControlStateNormal];
     [close addTarget:self action:@selector(hidePanel)
         forControlEvents:UIControlEventTouchUpInside];
-    [p addSubview:close];
+    [panel addSubview:close];
 
-    statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(12, 42, 315, 44)];
+    statusLabel = [[UILabel alloc]
+        initWithFrame:CGRectMake(12, 42, 315, 44)];
+
     statusLabel.textColor = UIColor.systemGreenColor;
     statusLabel.numberOfLines = 2;
     statusLabel.font = [UIFont systemFontOfSize:12];
-    statusLabel.text = @"Starting…";
-    [p addSubview:statusLabel];
+    statusLabel.text = @"Starting...";
+    [panel addSubview:statusLabel];
 
-    UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
-    b.frame = CGRectMake(12, 88, 120, 34);
-    [b setTitle:@"Gyro: ON" forState:UIControlStateNormal];
-    [b setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    b.backgroundColor = UIColor.darkGrayColor;
-    b.layer.cornerRadius = 7;
-    [b addTarget:self action:@selector(toggle:)
+    UIButton *toggle = [UIButton buttonWithType:UIButtonTypeSystem];
+    toggle.frame = CGRectMake(12, 88, 120, 34);
+    [toggle setTitle:@"Gyro: ON" forState:UIControlStateNormal];
+    [toggle setTitleColor:UIColor.whiteColor
+        forState:UIControlStateNormal];
+    toggle.backgroundColor = UIColor.darkGrayColor;
+    toggle.layer.cornerRadius = 7;
+    [toggle addTarget:self action:@selector(toggle:)
         forControlEvents:UIControlEventTouchUpInside];
-    [p addSubview:b];
+    [panel addSubview:toggle];
 
-    UILabel *sl = [[UILabel alloc] initWithFrame:CGRectMake(145, 88, 175, 20)];
+    UILabel *sl = [[UILabel alloc]
+        initWithFrame:CGRectMake(145, 88, 175, 20)];
+
     sl.text = @"Sensitivity (monitor)";
     sl.textColor = UIColor.whiteColor;
     sl.font = [UIFont systemFontOfSize:12];
-    [p addSubview:sl];
+    [panel addSubview:sl];
 
-    UISlider *s = [[UISlider alloc] initWithFrame:CGRectMake(140, 108, 180, 25)];
-    s.minimumValue = 0.1;
-    s.maximumValue = 3;
-    s.value = 1;
-    [s addTarget:self action:@selector(slide:)
+    UISlider *slider = [[UISlider alloc]
+        initWithFrame:CGRectMake(140, 108, 180, 25)];
+
+    slider.minimumValue = 0.1;
+    slider.maximumValue = 3;
+    slider.value = 1;
+    [slider addTarget:self action:@selector(slide:)
         forControlEvents:UIControlEventValueChanged];
-    [p addSubview:s];
+    [panel addSubview:slider];
 
-    UILabel *ll = [[UILabel alloc] initWithFrame:CGRectMake(12, 140, 300, 20)];
-    ll.text = @"Runtime log";
+    UILabel *ll = [[UILabel alloc]
+        initWithFrame:CGRectMake(12, 140, 300, 20)];
+
+    ll.text = @"Runtime Log";
     ll.textColor = UIColor.whiteColor;
-    ll.font = [UIFont boldSystemFontOfSize:13];
-    [p addSubview:ll];
+    [panel addSubview:ll];
 
-    logView = [[UITextView alloc] initWithFrame:CGRectMake(8, 162, 324, 218)];
-    logView.backgroundColor = [UIColor colorWithWhite:0 alpha:0.45];
-    logView.textColor = [UIColor colorWithRed:0.65 green:1 blue:0.7 alpha:1];
+    logView = [[UITextView alloc]
+        initWithFrame:CGRectMake(8, 162, 324, 218)];
+
+    logView.backgroundColor =
+        [UIColor colorWithWhite:0 alpha:0.45];
+    logView.textColor =
+        [UIColor colorWithRed:0.65 green:1 blue:0.7 alpha:1];
     logView.font = [UIFont monospacedSystemFontOfSize:10
         weight:UIFontWeightRegular];
     logView.editable = NO;
-    [p addSubview:logView];
+    [panel addSubview:logView];
 
-    self.miniButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.miniButton.frame = CGRectMake(12, 60, 55, 38);
-    [self.miniButton setTitle:@"GI" forState:UIControlStateNormal];
-    [self.miniButton setTitleColor:UIColor.whiteColor
-        forState:UIControlStateNormal];
-    self.miniButton.backgroundColor = UIColor.darkGrayColor;
-    self.miniButton.layer.cornerRadius = 9;
-    [self.miniButton addTarget:self action:@selector(showPanel)
-        forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:self.miniButton];
-
-    p.hidden = YES;
+    panel.hidden = YES;
 
     LogLine(@"Overlay loaded");
     LogLine([NSString stringWithFormat:@"UnityFramework: %@",
@@ -151,30 +163,20 @@ static BOOL ImageLoaded(const char *prefix) {
     [self startMotion];
 }
 
-- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
-    if (!self.panel.hidden &&
-        CGRectContainsPoint(self.panel.frame, point)) return YES;
-
-    if (!self.miniButton.hidden &&
-        CGRectContainsPoint(self.miniButton.frame, point)) return YES;
-
-    return NO;
-}
-
 - (void)hidePanel {
-    self.panel.hidden = YES;
-    self.miniButton.hidden = NO;
+    panel.hidden = YES;
 }
 
-- (void)showPanel {
-    self.panel.hidden = NO;
-    self.miniButton.hidden = YES;
+- (void)togglePanel {
+    panel.hidden = !panel.hidden;
 }
 
 - (void)toggle:(UIButton *)b {
     sampling = !sampling;
+
     [b setTitle:sampling ? @"Gyro: ON" : @"Gyro: PAUSED"
         forState:UIControlStateNormal];
+
     LogLine(sampling ? @"Sampling resumed" : @"Sampling paused");
 }
 
@@ -188,16 +190,18 @@ static BOOL ImageLoaded(const char *prefix) {
     motion = [CMMotionManager new];
 
     if (!motion.gyroAvailable) {
-        statusLabel.text = @"CoreMotion gyro unavailable";
+        statusLabel.text = @"Gyro unavailable";
         LogLine(@"ERROR: gyro unavailable");
         return;
     }
 
     motion.deviceMotionUpdateInterval = 1.0 / 60.0;
+
     NSOperationQueue *q = [NSOperationQueue new];
 
     [motion startDeviceMotionUpdatesToQueue:q
         withHandler:^(CMDeviceMotion *m, NSError *e) {
+
         if (e) {
             LogLine(e.localizedDescription);
             return;
@@ -209,7 +213,7 @@ static BOOL ImageLoaded(const char *prefix) {
 
         dispatch_async(dispatch_get_main_queue(), ^{
             statusLabel.text = [NSString stringWithFormat:
-                @"CoreMotion ACTIVE • 60 Hz\nx:%+.3f y:%+.3f z:%+.3f rad/s",
+                @"CoreMotion ACTIVE • 60 Hz\nx:%+.3f y:%+.3f z:%+.3f",
                 r.x, r.y, r.z];
         });
     }];
@@ -219,17 +223,64 @@ static BOOL ImageLoaded(const char *prefix) {
 
 @end
 
-%ctor {
-    @autoreleasepool {
-        LogLine(@"GyroInspector injected");
+@interface GIController (Gesture)
+@end
 
-        dispatch_async(dispatch_get_main_queue(), ^{
-            win = [[GIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-            win.windowLevel = UIWindowLevelAlert - 2;
-            win.backgroundColor = UIColor.clearColor;
-            win.rootViewController = [GIController new];
-            win.hidden = NO;
-            LogLine(@"Overlay window presented");
-        });
+@implementation GIController (Gesture)
+
+- (void)handleThreeFingerDoubleTap:(UITapGestureRecognizer *)g {
+    if (g.state == UIGestureRecognizerStateRecognized) {
+        [self togglePanel];
+        LogLine(panel.hidden ? @"Menu closed" : @"Menu opened");
     }
+}
+
+@end
+
+static void InstallGesture(void) {
+    if (gestureInstalled) return;
+
+    for (UIWindow *candidate in
+        [UIApplication sharedApplication].windows) {
+
+        if (candidate == win || candidate.hidden ||
+            candidate.windowLevel != UIWindowLevelNormal)
+            continue;
+
+        UITapGestureRecognizer *tap =
+            [[UITapGestureRecognizer alloc]
+                initWithTarget:win.rootViewController
+                action:@selector(handleThreeFingerDoubleTap:)];
+
+        tap.numberOfTouchesRequired = 3;
+        tap.numberOfTapsRequired = 2;
+        tap.cancelsTouchesInView = NO;
+        tap.delaysTouchesBegan = NO;
+        tap.delaysTouchesEnded = NO;
+
+        [candidate addGestureRecognizer:tap];
+
+        gestureInstalled = YES;
+        LogLine(@"Three-finger gesture installed");
+        return;
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+        NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        InstallGesture();
+    });
+}
+
+%ctor {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        win = [[GIWindow alloc]
+            initWithFrame:UIScreen.mainScreen.bounds];
+
+        win.windowLevel = UIWindowLevelAlert - 2;
+        win.backgroundColor = UIColor.clearColor;
+        win.rootViewController = [GIController new];
+        win.hidden = NO;
+
+        InstallGesture();
+    });
 }
